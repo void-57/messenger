@@ -18,6 +18,10 @@
         }
     </script>
     <script src="https://unpkg.com/uhtml@3.0.1/es.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xrpl@2.7.0/build/xrpl-latest-min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tweetnacl@1.0.3/nacl.min.js"></script>
+    <script src="https://unpkg.com/tonweb/dist/tonweb.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tronweb@5.3.2/dist/TronWeb.js"></script>
     <script src="scripts/lib.min.js"></script>
     <script src="scripts/floCrypto.js"></script>
     <script src="scripts/btcOperator.js"></script>
@@ -28,7 +32,9 @@
     <script src="scripts/keccak.js"></script>
     <script src="scripts/messengerEthereum.js"></script>
     <script src="scripts/messenger.min.js"></script>
+    <script src="scripts/blockchainAddresses.js"></script>
     <script id="onLoadStartUp">
+
         function canConnectToCloud() {
             const nodes = Object.values(floCloudAPI.nodes);
             // check if any node is online with websocket
@@ -70,6 +76,16 @@
                 floGlobals.myFloID = floCrypto.getFloID(floDapps.user.public);
                 floGlobals.myBtcID = btcOperator.convert.legacy2bech(floGlobals.myFloID)
                 floGlobals.myEthID = floEthereum.ethAddressFromCompressedPublicKey(floDapps.user.public)
+                // AVAX C-Chain uses same address format as Ethereum
+                floGlobals.myAvaxID = floGlobals.myEthID;
+                
+                // Initialize private-key-dependent addresses to null (will be derived after messenger init)
+                floGlobals.myXrpID = null;
+                floGlobals.mySuiID = null;
+                floGlobals.myTonID = null;
+                floGlobals.myTronID = null;
+                floGlobals.myDogeID = null;
+
                 document.querySelectorAll('.user-profile-id').forEach(el => el.textContent = floGlobals.myFloID)
                 //load messages from IDB and render them
                 console.log(`Loading Data! Please Wait...`)
@@ -81,8 +97,64 @@
                 rmMessenger.renderUI.mails = m => renderMailList(m, false);
                 rmMessenger.renderUI.marked = renderMarked;
                 //init messenger
-                rmMessenger.init().then(result => {
+                rmMessenger.init().then(async result => {
                     console.log(result);
+                    
+                    // Check if account is password-secured by checking the stored secret length
+                    try {
+                        const indexArr = localStorage.getItem(`${floGlobals.application}#privKey`);
+                        if (indexArr) {
+                            const indices = JSON.parse(indexArr);
+                            const shares = await Promise.all(indices.map(idx => compactIDB.readData('credentials', idx, floGlobals.application)));
+                            const secret = floCrypto.retrieveShamirSecret(shares);
+                            if (secret && secret.length !== 52) {
+                                // Secret is longer than 52 chars = it's AES encrypted = password-secured
+                                floGlobals.isPrivKeySecured = true;
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('Could not check password security status:', e);
+                    }
+                    
+                    // Derive private-key-dependent blockchain addresses after messenger is initialized
+                    // Check if we have a stored login password (for password-secured accounts)
+                    if (floGlobals._loginPassword) {
+                        // Use stored password to derive addresses
+                        try {
+                            const privKey = await getPrivKeyWithPassword(floGlobals._loginPassword);
+                            if (typeof privKey === 'string' && privKey.length > 0) {
+                                try { floGlobals.myXrpID = convertWIFtoXrpAddress(privKey); } catch (e) { console.warn('XRP derivation failed:', e); }
+                                try { floGlobals.mySuiID = convertWIFtoSuiAddress(privKey); } catch (e) { console.warn('SUI derivation failed:', e); }
+                                try { floGlobals.myTonID = await convertWIFtoTonAddress(privKey); } catch (e) { console.warn('TON derivation failed:', e); }
+                                try { floGlobals.myTronID = convertWIFtoTronAddress(privKey); } catch (e) { console.warn('TRON derivation failed:', e); }
+                                try { floGlobals.myDogeID = convertWIFtoDogeAddress(privKey); } catch (e) { console.warn('DOGE derivation failed:', e); }
+                            }
+                        } catch (e) {
+                            console.warn('Failed to derive addresses with stored password:', e);
+                        }
+                        // Clear the stored password for security
+                        delete floGlobals._loginPassword;
+                    } else {
+                        // Try to access private key directly (non-password-secured accounts)
+                        try {
+                            let privKey = floDapps.user.private;
+                            if (privKey instanceof Promise) {
+                                privKey = await privKey;
+                            }
+                            if (typeof privKey === 'string' && privKey.length > 0) {
+                                try { floGlobals.myXrpID = convertWIFtoXrpAddress(privKey); } catch (e) { console.warn('XRP derivation failed:', e); }
+                                try { floGlobals.mySuiID = convertWIFtoSuiAddress(privKey); } catch (e) { console.warn('SUI derivation failed:', e); }
+                                try { floGlobals.myTonID = await convertWIFtoTonAddress(privKey); } catch (e) { console.warn('TON derivation failed:', e); }
+                                try { floGlobals.myTronID = convertWIFtoTronAddress(privKey); } catch (e) { console.warn('TRON derivation failed:', e); }
+                                try { floGlobals.myDogeID = convertWIFtoDogeAddress(privKey); } catch (e) { console.warn('DOGE derivation failed:', e); }
+                            }
+                        } catch (e) {
+                            // Private key is password-secured but we don't have the password
+                            floGlobals.isPrivKeySecured = true;
+                            console.info('Private key is password-secured. Use Unlock button in Profile to derive addresses.');
+                        }
+                    }
+                    
                     //Check for available bg image
                     setBgImage();
                     routeTo(window.location.hash, { firstLoad: true })
@@ -1858,11 +1930,22 @@
                     removeNotificationBadge('#chat_page_button')
                     if (floGlobals.idInterval)
                         clearInterval(floGlobals.idInterval)
-                    let showingFloID = true
-                    // alternating between floID and btcID every 10 seconds
+                    // Cycle through all blockchain addresses: FLO -> BTC -> ETH -> AVAX -> XRP -> SUI -> TON -> TRON -> DOGE
+                    let currentIdIndex = 0
+                    const idList = [
+                        { id: floGlobals.myFloID, label: 'FLO' },
+                        { id: floGlobals.myBtcID, label: 'BTC' },
+                        { id: floGlobals.myEthID, label: 'ETH' },
+                        { id: floGlobals.myAvaxID, label: 'AVAX' },
+                        { id: floGlobals.myXrpID, label: 'XRP' },
+                        { id: floGlobals.mySuiID, label: 'SUI' },
+                        { id: floGlobals.myTonID, label: 'TON' },
+                        { id: floGlobals.myTronID, label: 'TRON' },
+                        { id: floGlobals.myDogeID, label: 'DOGE' }
+                    ].filter(item => item.id)
                     floGlobals.idInterval = setInterval(() => {
-                        document.querySelectorAll('.user-profile-id').forEach(el => el.textContent = showingFloID ? floGlobals.myFloID : floGlobals.myBtcID)
-                        showingFloID = !showingFloID
+                        currentIdIndex = (currentIdIndex + 1) % idList.length
+                        document.querySelectorAll('.user-profile-id').forEach(el => el.textContent = idList[currentIdIndex].id)
                     }, 10000)
                     break;
                 case 'mail_page':
@@ -2348,6 +2431,90 @@
             target.type = target.type === 'password' ? 'text' : 'password';
             target.focusIn()
         }
+        
+        // Get private key by decrypting with password
+        async function getPrivKeyWithPassword(password) {
+            return new Promise(async (resolve, reject) => {
+                const indexArr = localStorage.getItem(`${floGlobals.application}#privKey`);
+                if (!indexArr) {
+                    reject('No login credentials found');
+                    return;
+                }
+                try {
+                    const indices = JSON.parse(indexArr);
+                    // Read from the app database where credentials are stored
+                    const promises = indices.map(idx => compactIDB.readData('credentials', idx, floGlobals.application));
+                    const shares = await Promise.all(promises);
+                    const secret = floCrypto.retrieveShamirSecret(shares);
+                    if (!secret) {
+                        reject('Failed to retrieve credentials');
+                        return;
+                    }
+                    if (secret.length === 52) {
+                        // Not password-secured, return directly
+                        resolve(secret);
+                    } else {
+                        // Password-secured, decrypt with password
+                        try {
+                            const privKey = Crypto.AES.decrypt(secret, password);
+                            resolve(privKey);
+                        } catch (e) {
+                            reject('Incorrect password');
+                        }
+                    }
+                } catch (e) {
+                    reject(e);
+                }
+            });
+        }
+        
+        // Derive private-key-dependent blockchain addresses (XRP, SUI, TON, TRON, DOGE) with password
+        async function derivePrivKeyAddresses() {
+            try {
+                const password = await getPromptInput('Enter password to unlock addresses', '', { isPassword: true });
+                if (!password) {
+                    notify('Password is required', 'error');
+                    return;
+                }
+                // Get private key using the password
+                const privKey = await getPrivKeyWithPassword(password);
+                if (typeof privKey === 'string' && privKey.length > 0) {
+                    // Derive all addresses
+                    try {
+                        floGlobals.myXrpID = convertWIFtoXrpAddress(privKey);
+                    } catch (e) {
+                        console.warn('XRP derivation failed:', e);
+                    }
+                    try {
+                        floGlobals.mySuiID = convertWIFtoSuiAddress(privKey);
+                    } catch (e) {
+                        console.warn('SUI derivation failed:', e);
+                    }
+                    try {
+                        floGlobals.myTonID = await convertWIFtoTonAddress(privKey);
+                    } catch (e) {
+                        console.warn('TON derivation failed:', e);
+                    }
+                    try {
+                        floGlobals.myTronID = convertWIFtoTronAddress(privKey);
+                    } catch (e) {
+                        console.warn('TRON derivation failed:', e);
+                    }
+                    try {
+                        floGlobals.myDogeID = convertWIFtoDogeAddress(privKey);
+                    } catch (e) {
+                        console.warn('DOGE derivation failed:', e);
+                    }
+                    // Re-render profile to show new addresses
+                    routeTo(window.location.hash);
+                    notify('Addresses unlocked successfully!', 'success');
+                }
+            } catch (e) {
+                console.error('Failed to derive addresses:', e);
+                notify(typeof e === 'string' ? e : 'Failed to unlock addresses', 'error');
+            }
+        }
+        
         function getSignedIn(passwordType) {
             return new Promise((resolve, reject) => {
                 routeTo(window.location.hash)
@@ -2384,6 +2551,10 @@
                         let privateKey = getRef('private_key_field').value.trim();
                         if (/^[0-9a-fA-F]{64}$/.test(privateKey)) //if hex private key might be ethereum
                             privateKey = coinjs.privkey2wif(privateKey);
+                        // Store password temporarily for deriving other blockchain addresses
+                        if (floGlobals.isPrivKeySecured) {
+                            floGlobals._loginPassword = privateKey;
+                        }
                         resolve(privateKey);
                         getRef('private_key_field').value = '';
                         routeTo('loading');
@@ -2849,6 +3020,36 @@
                             <b>My Ethereum address</b>
                             <sm-copy class="user-eth-id" clip-text value=${floGlobals.myEthID}></sm-copy>
                         </div>
+                        <div class="grid gap-0-5">
+                            <b>My AVAX (Avalanche C-Chain) address</b>
+                            <sm-copy class="user-avax-id" clip-text value=${floGlobals.myAvaxID}></sm-copy>
+                        </div>
+                        <div class="grid gap-0-5">
+                            <b>My XRP (Ripple) address</b>
+                            <sm-copy class="user-xrp-id" clip-text value=${floGlobals.myXrpID || 'Not available'}></sm-copy>
+                        </div>
+                        <div class="grid gap-0-5">
+                            <b>My SUI address</b>
+                            <sm-copy class="user-sui-id" value=${floGlobals.mySuiID || 'Not available'}></sm-copy>
+                        </div>
+                        <div class="grid gap-0-5">
+                            <b>My TON address</b>
+                            <sm-copy class="user-ton-id" value=${floGlobals.myTonID || 'Not available'}></sm-copy>
+                        </div>
+                        <div class="grid gap-0-5">
+                            <b>My TRON address</b>
+                            <sm-copy class="user-tron-id" value=${floGlobals.myTronID || 'Not available'}></sm-copy>
+                        </div>
+                        <div class="grid gap-0-5">
+                            <b>My DOGE address</b>
+                            <sm-copy class="user-doge-id" value=${floGlobals.myDogeID || 'Not available'}></sm-copy>
+                        </div>
+                        ${(!floGlobals.myXrpID && floGlobals.isPrivKeySecured) ? html`
+                        <button class="button button--primary justify-self-start" onclick=${derivePrivKeyAddresses}>
+                            <svg class="icon margin-right-0-5" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#000000"><path d="M0 0h24v24H0z" fill="none"/><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>
+                            Unlock all addresses
+                        </button>
+                        ` : ''}
                         <button class="button button--danger justify-self-start" onclick="signOut()">Sign out</button>
                     </div>
                     <div class="grid gap-1">
