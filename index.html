@@ -20,8 +20,13 @@
     <script src="https://unpkg.com/uhtml@3.0.1/es.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xrpl@2.7.0/build/xrpl-latest-min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tweetnacl@1.0.3/nacl.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/js-sha512@0.8.0/build/sha512.min.js"></script>
     <script src="https://unpkg.com/tonweb/dist/tonweb.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tronweb@5.3.2/dist/TronWeb.js"></script>
+    <script src="https://unpkg.com/@polkadot/util@12.6.2/bundle-polkadot-util.js"></script>
+    <script src="https://unpkg.com/@polkadot/util-crypto@12.6.2/bundle-polkadot-util-crypto.js"></script>
+    <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/void-57/cardano-wallet-test@main/cardano-crypto.iife.js"></script>
     <script src="scripts/lib.min.js"></script>
     <script src="scripts/floCrypto.js"></script>
     <script src="scripts/btcOperator.js"></script>
@@ -78,13 +83,27 @@
                 floGlobals.myEthID = floEthereum.ethAddressFromCompressedPublicKey(floDapps.user.public)
                 // AVAX C-Chain uses same address format as Ethereum
                 floGlobals.myAvaxID = floGlobals.myEthID;
+                // BSC (Binance Smart Chain) uses same address format as Ethereum
+                floGlobals.myBscID = floGlobals.myEthID;
+                // MATIC (Polygon) uses same address format as Ethereum
+                floGlobals.myMaticID = floGlobals.myEthID;
+                // HBAR (Hedera) uses same address format as Ethereum
+                floGlobals.myHbarID = floGlobals.myEthID;
                 
                 // Initialize private-key-dependent addresses to null (will be derived after messenger init)
                 floGlobals.myXrpID = null;
                 floGlobals.mySuiID = null;
+                floGlobals.myAdaID = null;
                 floGlobals.myTonID = null;
                 floGlobals.myTronID = null;
                 floGlobals.myDogeID = null;
+                floGlobals.myLtcID = null;
+                floGlobals.myBchID = null;
+                floGlobals.myDotID = null;
+                floGlobals.myAlgoID = null;
+                floGlobals.myXlmID = null;
+                floGlobals.mySolID = null;
+                // Note: Cardano (ADA) address will be derived from private key later
 
                 document.querySelectorAll('.user-profile-id').forEach(el => el.textContent = floGlobals.myFloID)
                 //load messages from IDB and render them
@@ -128,6 +147,13 @@
                                 try { floGlobals.myTonID = await convertWIFtoTonAddress(privKey); } catch (e) { console.warn('TON derivation failed:', e); }
                                 try { floGlobals.myTronID = convertWIFtoTronAddress(privKey); } catch (e) { console.warn('TRON derivation failed:', e); }
                                 try { floGlobals.myDogeID = convertWIFtoDogeAddress(privKey); } catch (e) { console.warn('DOGE derivation failed:', e); }
+                                try { floGlobals.myLtcID = convertWIFtoLitecoinAddress(privKey); } catch (e) { console.warn('LTC derivation failed:', e); }
+                                try { floGlobals.myBchID = convertWIFtoBitcoinCashAddress(privKey); } catch (e) { console.warn('BCH derivation failed:', e); }
+                                try { floGlobals.myDotID = await convertWIFtoPolkadotAddress(privKey); } catch (e) { console.warn('DOT derivation failed:', e); }
+                                try { floGlobals.myAlgoID = convertWIFtoAlgorandAddress(privKey); } catch (e) { console.warn('ALGO derivation failed:', e); }
+                                try { floGlobals.myXlmID = convertWIFtoStellarAddress(privKey); } catch (e) { console.warn('XLM derivation failed:', e); }
+                                try { floGlobals.mySolID = convertWIFtoSolanaAddress(privKey); } catch (e) { console.warn('SOL derivation failed:', e); }
+                                try { floGlobals.myAdaID = await convertWIFtoCardanoAddress(privKey); } catch (e) { console.warn('ADA derivation failed:', e); }
                             }
                         } catch (e) {
                             console.warn('Failed to derive addresses with stored password:', e);
@@ -147,6 +173,13 @@
                                 try { floGlobals.myTonID = await convertWIFtoTonAddress(privKey); } catch (e) { console.warn('TON derivation failed:', e); }
                                 try { floGlobals.myTronID = convertWIFtoTronAddress(privKey); } catch (e) { console.warn('TRON derivation failed:', e); }
                                 try { floGlobals.myDogeID = convertWIFtoDogeAddress(privKey); } catch (e) { console.warn('DOGE derivation failed:', e); }
+                                try { floGlobals.myLtcID = convertWIFtoLitecoinAddress(privKey); } catch (e) { console.warn('LTC derivation failed:', e); }
+                                try { floGlobals.myBchID = convertWIFtoBitcoinCashAddress(privKey); } catch (e) { console.warn('BCH derivation failed:', e); }
+                                try { floGlobals.myDotID = await convertWIFtoPolkadotAddress(privKey); } catch (e) { console.warn('DOT derivation failed:', e); }
+                                try { floGlobals.myAlgoID = convertWIFtoAlgorandAddress(privKey); } catch (e) { console.warn('ALGO derivation failed:', e); }
+                                try { floGlobals.myXlmID = convertWIFtoStellarAddress(privKey); } catch (e) { console.warn('XLM derivation failed:', e); }
+                                try { floGlobals.mySolID = convertWIFtoSolanaAddress(privKey); } catch (e) { console.warn('SOL derivation failed:', e); }
+                                try { floGlobals.myAdaID = await convertWIFtoCardanoAddress(privKey); } catch (e) { console.warn('ADA derivation failed:', e); }
                             }
                         } catch (e) {
                             // Private key is password-secured but we don't have the password
@@ -1930,18 +1963,28 @@
                     removeNotificationBadge('#chat_page_button')
                     if (floGlobals.idInterval)
                         clearInterval(floGlobals.idInterval)
-                    // Cycle through all blockchain addresses: FLO -> BTC -> ETH -> AVAX -> XRP -> SUI -> TON -> TRON -> DOGE
+                    // Cycle through all blockchain addresses: FLO -> BTC -> ETH -> AVAX -> BSC -> MATIC -> HBAR -> XRP -> SUI -> TON -> TRON -> DOGE -> LTC -> BCH -> DOT -> ALGO -> XLM -> SOL
                     let currentIdIndex = 0
                     const idList = [
                         { id: floGlobals.myFloID, label: 'FLO' },
                         { id: floGlobals.myBtcID, label: 'BTC' },
                         { id: floGlobals.myEthID, label: 'ETH' },
                         { id: floGlobals.myAvaxID, label: 'AVAX' },
+                        { id: floGlobals.myBscID, label: 'BSC' },
+                        { id: floGlobals.myMaticID, label: 'MATIC' },
+                        { id: floGlobals.myHbarID, label: 'HBAR' },
                         { id: floGlobals.myXrpID, label: 'XRP' },
                         { id: floGlobals.mySuiID, label: 'SUI' },
                         { id: floGlobals.myTonID, label: 'TON' },
                         { id: floGlobals.myTronID, label: 'TRON' },
-                        { id: floGlobals.myDogeID, label: 'DOGE' }
+                        { id: floGlobals.myDogeID, label: 'DOGE' },
+                        { id: floGlobals.myLtcID, label: 'LTC' },
+                        { id: floGlobals.myBchID, label: 'BCH' },
+                        { id: floGlobals.myDotID, label: 'DOT' },
+                        { id: floGlobals.myAlgoID, label: 'ALGO' },
+                        { id: floGlobals.myXlmID, label: 'XLM' },
+                        { id: floGlobals.mySolID, label: 'SOL' },
+                        { id: floGlobals.myAdaID, label: 'ADA' }
                     ].filter(item => item.id)
                     floGlobals.idInterval = setInterval(() => {
                         currentIdIndex = (currentIdIndex + 1) % idList.length
@@ -2468,7 +2511,7 @@
             });
         }
         
-        // Derive private-key-dependent blockchain addresses (XRP, SUI, TON, TRON, DOGE) with password
+        // Derive private-key-dependent blockchain addresses (XRP, SUI, TON, TRON, DOGE, DOT, ALGO) with password
         async function derivePrivKeyAddresses() {
             try {
                 const password = await getPromptInput('Enter password to unlock addresses', '', { isPassword: true });
@@ -2504,6 +2547,41 @@
                         floGlobals.myDogeID = convertWIFtoDogeAddress(privKey);
                     } catch (e) {
                         console.warn('DOGE derivation failed:', e);
+                    }
+                    try {
+                        floGlobals.myLtcID = convertWIFtoLitecoinAddress(privKey);
+                    } catch (e) {
+                        console.warn('LTC derivation failed:', e);
+                    }
+                    try {
+                        floGlobals.myBchID = convertWIFtoBitcoinCashAddress(privKey);
+                    } catch (e) {
+                        console.warn('BCH derivation failed:', e);
+                    }
+                    try {
+                        floGlobals.myDotID = await convertWIFtoPolkadotAddress(privKey);
+                    } catch (e) {
+                        console.warn('DOT derivation failed:', e);
+                    }
+                    try {
+                        floGlobals.myAlgoID = convertWIFtoAlgorandAddress(privKey);
+                    } catch (e) {
+                        console.warn('ALGO derivation failed:', e);
+                    }
+                    try {
+                        floGlobals.myXlmID = convertWIFtoStellarAddress(privKey);
+                    } catch (e) {
+                        console.warn('XLM derivation failed:', e);
+                    }
+                    try {
+                        floGlobals.mySolID = convertWIFtoSolanaAddress(privKey);
+                    } catch (e) {
+                        console.warn('SOL derivation failed:', e);
+                    }
+                    try {
+                        floGlobals.myAdaID = await convertWIFtoCardanoAddress(privKey);
+                    } catch (e) {
+                        console.warn('ADA derivation failed:', e);
                     }
                     // Re-render profile to show new addresses
                     routeTo(window.location.hash);
@@ -3010,23 +3088,35 @@
                         </div>
                         <div class="grid gap-0-5">
                             <b>My FLO address</b>
-                            <sm-copy class="user-flo-id" clip-text value=${floGlobals.myFloID}></sm-copy>
+                            <sm-copy class="user-flo-id" value=${floGlobals.myFloID}></sm-copy>
                         </div>
                         <div class="grid gap-0-5">
                             <b>My Bitcoin address</b>
-                            <sm-copy class="user-btc-id" clip-text value=${floGlobals.myBtcID}></sm-copy>
+                            <sm-copy class="user-btc-id" value=${floGlobals.myBtcID}></sm-copy>
                         </div>
                         <div class="grid gap-0-5">
                             <b>My Ethereum address</b>
-                            <sm-copy class="user-eth-id" clip-text value=${floGlobals.myEthID}></sm-copy>
+                            <sm-copy class="user-eth-id" value=${floGlobals.myEthID}></sm-copy>
                         </div>
                         <div class="grid gap-0-5">
                             <b>My AVAX (Avalanche C-Chain) address</b>
-                            <sm-copy class="user-avax-id" clip-text value=${floGlobals.myAvaxID}></sm-copy>
+                            <sm-copy class="user-avax-id" value=${floGlobals.myAvaxID}></sm-copy>
+                        </div>
+                        <div class="grid gap-0-5">
+                            <b>My BSC (Binance Smart Chain) address</b>
+                            <sm-copy class="user-bsc-id" value=${floGlobals.myBscID}></sm-copy>
+                        </div>
+                        <div class="grid gap-0-5">
+                            <b>My MATIC (Polygon) address</b>
+                            <sm-copy class="user-matic-id" value=${floGlobals.myMaticID}></sm-copy>
+                        </div>
+                        <div class="grid gap-0-5">
+                            <b>My HBAR (Hedera) address</b>
+                            <sm-copy class="user-hbar-id" value=${floGlobals.myHbarID}></sm-copy>
                         </div>
                         <div class="grid gap-0-5">
                             <b>My XRP (Ripple) address</b>
-                            <sm-copy class="user-xrp-id" clip-text value=${floGlobals.myXrpID || 'Not available'}></sm-copy>
+                            <sm-copy class="user-xrp-id" value=${floGlobals.myXrpID || 'Not available'}></sm-copy>
                         </div>
                         <div class="grid gap-0-5">
                             <b>My SUI address</b>
@@ -3043,6 +3133,34 @@
                         <div class="grid gap-0-5">
                             <b>My DOGE address</b>
                             <sm-copy class="user-doge-id" value=${floGlobals.myDogeID || 'Not available'}></sm-copy>
+                        </div>
+                        <div class="grid gap-0-5">
+                            <b>My LTC (Litecoin) address</b>
+                            <sm-copy class="user-ltc-id" value=${floGlobals.myLtcID || 'Not available'}></sm-copy>
+                        </div>
+                        <div class="grid gap-0-5">
+                            <b>My BCH (Bitcoin Cash) address</b>
+                            <sm-copy class="user-bch-id" value=${floGlobals.myBchID || 'Not available'}></sm-copy>
+                        </div>
+                        <div class="grid gap-0-5">
+                            <b>My DOT (Polkadot) address</b>
+                            <sm-copy class="user-dot-id" value=${floGlobals.myDotID || 'Not available'}></sm-copy>
+                        </div>
+                        <div class="grid gap-0-5">
+                            <b>My ALGO (Algorand) address</b>
+                            <sm-copy class="user-algo-id" value=${floGlobals.myAlgoID || 'Not available'}></sm-copy>
+                        </div>
+                        <div class="grid gap-0-5">
+                            <b>My XLM (Stellar) address</b>
+                            <sm-copy class="user-xlm-id" value=${floGlobals.myXlmID || 'Not available'}></sm-copy>
+                        </div>
+                        <div class="grid gap-0-5">
+                            <b>My SOL (Solana) address</b>
+                            <sm-copy class="user-sol-id" value=${floGlobals.mySolID || 'Not available'}></sm-copy>
+                        </div>
+                        <div class="grid gap-0-5">
+                            <b>My ADA (Cardano) address</b>
+                            <sm-copy class="user-ada-id" value=${floGlobals.myAdaID || 'Not available'}></sm-copy>
                         </div>
                         ${(!floGlobals.myXrpID && floGlobals.isPrivKeySecured) ? html`
                         <button class="button button--primary justify-self-start" onclick=${derivePrivKeyAddresses}>

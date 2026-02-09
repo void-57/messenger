@@ -3,20 +3,103 @@
  * Derives addresses for multiple blockchains from a single FLO/BTC WIF private key
  *
  * Supported Blockchains:
+ * - FLO - via floCrypto (base blockchain)
+ * - BTC (Bitcoin) - via btcOperator
+ * - ETH (Ethereum) - via floEthereum
+ * - AVAX (Avalanche C-Chain) - same as ETH (EVM-compatible)
+ * - BSC (Binance Smart Chain) - same as ETH (EVM-compatible)
+ * - MATIC (Polygon) - same as ETH (EVM-compatible)
+ * - HBAR (Hedera) - same as ETH (EVM-compatible)
  * - XRP (Ripple) - via xrpl library
  * - SUI - via nacl + BLAKE2b
  * - TON - via nacl + TonWeb
  * - TRON - via TronWeb
  * - DOGE - via bitjs with version byte 0x1e
+ * - LTC (Litecoin) - via bitjs with version byte 0x30
+ * - BCH (Bitcoin Cash) - via bitjs with version byte 0x00 + CashAddr format
+ * - DOT (Polkadot) - via @polkadot/util-crypto with SS58 encoding
+ * - ALGO (Algorand) - via nacl + SHA-512/256 with Base32 encoding
+ * - XLM (Stellar) - via nacl + CRC16-XModem with Base32 encoding
+ * - SOL (Solana) - via Ed25519 + Base58 encoding
+ * - ADA (Cardano) - via cardanoCrypto library (https://cdn.jsdelivr.net/gh/void-57/cardano-wallet-test@main/cardano-crypto.iife.js)
  *
  * Dependencies :
  * - bitjs (for WIF decoding)
  * - Crypto.util (for hex/bytes conversion)
  * - xrpl (for XRP)
- * - nacl/TweetNaCl (for SUI, TON)
+ * - nacl/TweetNaCl (for SUI, TON, ALGO, XLM)
  * - TonWeb (for TON)
  * - TronWeb (for TRON)
+ * - @polkadot/util-crypto (for DOT)
+ * - @polkadot/util (for DOT)
+ * - js-sha512 (for ALGO)
+ * - @solana/web3.js (for SOL)
+ * - cardanoCrypto (for ADA)
  */
+
+// Base58 encoding/decoding for Solana
+var bs58 = (function () {
+  const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  const BASE = ALPHABET.length;
+
+  // Convert a byte array to a Base58 string
+  function encode(buffer) {
+    if (buffer.length === 0) return "";
+
+    // Convert byte array to a BigInt
+    let intVal = BigInt(0);
+    for (let i = 0; i < buffer.length; i++) {
+      intVal = intVal * BigInt(256) + BigInt(buffer[i]);
+    }
+
+    // Convert BigInt to Base58 string
+    let result = "";
+    while (intVal > 0) {
+      const remainder = intVal % BigInt(BASE);
+      intVal = intVal / BigInt(BASE);
+      result = ALPHABET[Number(remainder)] + result;
+    }
+
+    // Add '1' for each leading 0 byte in the byte array
+    for (let i = 0; i < buffer.length && buffer[i] === 0; i++) {
+      result = ALPHABET[0] + result;
+    }
+
+    return result;
+  }
+
+  // Convert a Base58 string to a byte array
+  function decode(string) {
+    if (string.length === 0) return new Uint8Array();
+
+    // Convert Base58 string to BigInt
+    let intVal = BigInt(0);
+    for (let i = 0; i < string.length; i++) {
+      const charIndex = ALPHABET.indexOf(string[i]);
+      if (charIndex < 0) {
+        throw new Error("Invalid Base58 character");
+      }
+      intVal = intVal * BigInt(BASE) + BigInt(charIndex);
+    }
+
+    // Convert BigInt to byte array
+    const byteArray = [];
+    while (intVal > 0) {
+      byteArray.push(Number(intVal % BigInt(256)));
+      intVal = intVal / BigInt(256);
+    }
+
+    // Reverse the byte array and add leading zeros
+    byteArray.reverse();
+    for (let i = 0; i < string.length && string[i] === ALPHABET[0]; i++) {
+      byteArray.unshift(0);
+    }
+
+    return Uint8Array.from(byteArray);
+  }
+
+  return { encode, decode };
+})();
 
 // BlakeJS - BLAKE2b hashing implementation for SUI
 const blakejs = (function () {
@@ -169,6 +252,24 @@ const blakejs = (function () {
 })();
 
 /**
+ * Convert WIF private key to BSC (Binance Smart Chain) address
+ * BSC uses the same address format as Ethereum (EVM-compatible)
+ * @param {string} publicKey - Compressed public key in hex
+ * @returns {string} BSC address (same as ETH address)
+ */
+function convertPublicKeyToBscAddress(publicKey) {
+  // BSC addresses are identical to Ethereum addresses
+  // Both use the same EVM-compatible format
+  if (
+    typeof floEthereum === "undefined" ||
+    !floEthereum.ethAddressFromCompressedPublicKey
+  ) {
+    throw new Error("floEthereum library not loaded");
+  }
+  return floEthereum.ethAddressFromCompressedPublicKey(publicKey);
+}
+
+/**
  * Convert WIF private key to XRP (Ripple) address
  * Uses xrpl library with Ed25519 derivation
  * @param {string} wif - WIF format private key
@@ -319,13 +420,32 @@ function convertWIFtoTronAddress(wif) {
  */
 async function deriveAllBlockchainAddresses(wif) {
   const addresses = {
+    bsc: null,
+    matic: null,
+    hbar: null,
     xrp: null,
     sui: null,
     ton: null,
     tron: null,
     doge: null,
+    ltc: null,
+    bch: null,
+    dot: null,
+    algo: null,
+    xlm: null,
+    sol: null,
+    ada: null,
   };
 
+  try {
+    // BSC, MATIC, and HBAR use same address as ETH (requires public key, not WIF)
+    // These will be set from floGlobals.myEthID in the main code
+    addresses.bsc = null; // Set in main code as same as ETH
+    addresses.matic = null; // Set in main code as same as ETH
+    addresses.hbar = null; // Set in main code as same as ETH
+  } catch (e) {
+    console.warn("BSC/MATIC/HBAR derivation failed:", e);
+  }
   try {
     addresses.xrp = convertWIFtoXrpAddress(wif);
   } catch (e) {
@@ -350,6 +470,41 @@ async function deriveAllBlockchainAddresses(wif) {
     addresses.doge = convertWIFtoDogeAddress(wif);
   } catch (e) {
     console.warn("DOGE derivation failed:", e);
+  }
+  try {
+    addresses.dot = await convertWIFtoPolkadotAddress(wif);
+  } catch (e) {
+    console.warn("DOT derivation failed:", e);
+  }
+  try {
+    addresses.algo = convertWIFtoAlgorandAddress(wif);
+  } catch (e) {
+    console.warn("ALGO derivation failed:", e);
+  }
+  try {
+    addresses.xlm = convertWIFtoStellarAddress(wif);
+  } catch (e) {
+    console.warn("XLM derivation failed:", e);
+  }
+  try {
+    addresses.ltc = convertWIFtoLitecoinAddress(wif);
+  } catch (e) {
+    console.warn("LTC derivation failed:", e);
+  }
+  try {
+    addresses.bch = convertWIFtoBitcoinCashAddress(wif);
+  } catch (e) {
+    console.warn("BCH derivation failed:", e);
+  }
+  try {
+    addresses.sol = convertWIFtoSolanaAddress(wif);
+  } catch (e) {
+    console.warn("SOL derivation failed:", e);
+  }
+  try {
+    addresses.ada = await convertWIFtoCardanoAddress(wif);
+  } catch (e) {
+    console.warn("ADA derivation failed:", e);
   }
 
   return addresses;
@@ -402,6 +557,457 @@ function convertWIFtoDogeAddress(wif) {
     return dogeAddress;
   } catch (error) {
     console.error("WIF to DOGE conversion error:", error);
+    return null;
+  }
+}
+
+/**
+ * Convert WIF private key to LTC (Litecoin) address
+ * Uses secp256k1 with version byte 0x30 (48)
+ * @param {string} wif - WIF format private key
+ * @returns {string|null} LTC address (Base58 format starting with 'L') or null on error
+ */
+function convertWIFtoLitecoinAddress(wif) {
+  try {
+    // Store original settings
+    const origPub = bitjs.pub;
+    const origPriv = bitjs.priv;
+    const origBitjsCompressed = bitjs.compressed;
+
+    // Decode WIF to get raw private key and determine if compressed
+    const decode = Bitcoin.Base58.decode(wif);
+    const keyWithVersion = decode.slice(0, decode.length - 4);
+    let key = keyWithVersion.slice(1);
+
+    let compressed = true;
+    if (key.length >= 33 && key[key.length - 1] === 0x01) {
+      // Compressed WIF has 0x01 suffix
+      key = key.slice(0, key.length - 1);
+      compressed = true;
+    } else {
+      compressed = false;
+    }
+
+    const privKeyHex = Crypto.util.bytesToHex(key);
+
+    // Set LTC version bytes and compression
+    bitjs.pub = 0x30; // Litecoin mainnet pubkey version
+    bitjs.priv = 0xb0; // Litecoin mainnet private key version
+    bitjs.compressed = compressed;
+
+    // Generate public key from private key
+    const pubKey = bitjs.newPubkey(privKeyHex);
+    // Generate LTC address from public key
+    const ltcAddress = bitjs.pubkey2address(pubKey);
+
+    // Restore original settings
+    bitjs.pub = origPub;
+    bitjs.priv = origPriv;
+    bitjs.compressed = origBitjsCompressed;
+
+    return ltcAddress;
+  } catch (error) {
+    console.error("WIF to LTC conversion error:", error);
+    return null;
+  }
+}
+
+/**
+ * Convert WIF private key to BCH (Bitcoin Cash) address in CashAddr format
+ * Uses secp256k1 with version byte 0x00 (same as BTC) but returns CashAddr format
+ * @param {string} wif - WIF format private key
+ * @returns {string|null} BCH address (CashAddr format without prefix) or null on error
+ */
+function convertWIFtoBitcoinCashAddress(wif) {
+  try {
+    // Helper function to convert legacy address to CashAddr
+    function toCashAddr(legacyAddr) {
+      if (!legacyAddr || typeof legacyAddr !== "string") return legacyAddr;
+      if (legacyAddr.includes(":")) return legacyAddr; // Already cashaddr
+
+      try {
+        const ALPHABET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+
+        function polymod(values) {
+          let c = 1n;
+          for (let v of values) {
+            let b = c >> 35n;
+            c = ((c & 0x07ffffffffn) << 5n) ^ BigInt(v);
+            if (b & 1n) c ^= 0x98f2bc8e61n;
+            if (b & 2n) c ^= 0x79b76d99e2n;
+            if (b & 4n) c ^= 0xf33e5fb3c4n;
+            if (b & 8n) c ^= 0xae2eabe2a8n;
+            if (b & 16n) c ^= 0x1e4f43e470n;
+          }
+          return c ^ 1n;
+        }
+
+        function expandPrefix(prefix) {
+          let ret = [];
+          for (let i = 0; i < prefix.length; i++) {
+            ret.push(prefix.charCodeAt(i) & 0x1f);
+          }
+          ret.push(0);
+          return ret;
+        }
+
+        function convertBits(data, from, to, pad = true) {
+          let acc = 0;
+          let bits = 0;
+          const ret = [];
+          const maxv = (1 << to) - 1;
+          for (let i = 0; i < data.length; ++i) {
+            const value = data[i] & 0xff;
+            acc = (acc << from) | value;
+            bits += from;
+            while (bits >= to) {
+              bits -= to;
+              ret.push((acc >> bits) & maxv);
+            }
+            acc &= (1 << bits) - 1;
+          }
+          if (pad && bits > 0) {
+            ret.push((acc << (to - bits)) & maxv);
+          }
+          return ret;
+        }
+
+        // Decode legacy address
+        const decoded = Bitcoin.Base58.decode(legacyAddr);
+        if (!decoded || decoded.length < 25) return legacyAddr;
+
+        const version = decoded[0];
+        const hash = decoded.slice(1, -4);
+
+        // Version byte 0x00 is P2PKH (type 0), 0x05 is P2SH (type 1)
+        const type = version === 0x00 ? 0 : version === 0x05 ? 1 : null;
+        if (type === null) return legacyAddr;
+
+        const prefix = "bitcoincash";
+        const versionByte = type << 3;
+        const payload = [versionByte].concat(Array.from(hash));
+        const payload5bit = convertBits(payload, 8, 5, true);
+
+        const checksumData = expandPrefix(prefix)
+          .concat(payload5bit)
+          .concat([0, 0, 0, 0, 0, 0, 0, 0]);
+        const checksum = polymod(checksumData);
+        const checksum5bit = [];
+        for (let i = 0; i < 8; i++) {
+          checksum5bit.push(Number((checksum >> (5n * BigInt(7 - i))) & 0x1fn));
+        }
+
+        const combined = payload5bit.concat(checksum5bit);
+        let ret = "";
+        for (let v of combined) {
+          ret += ALPHABET[v];
+        }
+        return ret;
+      } catch (e) {
+        console.error("CashAddr conversion error:", e);
+        return legacyAddr;
+      }
+    }
+
+    // Store original settings
+    const origPub = bitjs.pub;
+    const origPriv = bitjs.priv;
+    const origBitjsCompressed = bitjs.compressed;
+
+    // Decode WIF to get raw private key and determine if compressed
+    const decode = Bitcoin.Base58.decode(wif);
+    const keyWithVersion = decode.slice(0, decode.length - 4);
+    let key = keyWithVersion.slice(1);
+
+    let compressed = true;
+    if (key.length >= 33 && key[key.length - 1] === 0x01) {
+      key = key.slice(0, key.length - 1);
+      compressed = true;
+    } else {
+      compressed = false;
+    }
+
+    const privKeyHex = Crypto.util.bytesToHex(key);
+
+    // Set BCH version bytes (same as BTC mainnet)
+    bitjs.pub = 0x00; // Bitcoin Cash mainnet pubkey version
+    bitjs.priv = 0x80; // Bitcoin Cash mainnet private key version
+    bitjs.compressed = compressed;
+
+    // Generate public key from private key
+    const pubKey = bitjs.newPubkey(privKeyHex);
+    // Generate legacy BCH address from public key
+    const legacyAddress = bitjs.pubkey2address(pubKey);
+
+    // Convert to CashAddr format
+    const cashAddr = toCashAddr(legacyAddress);
+
+    // Restore original settings
+    bitjs.pub = origPub;
+    bitjs.priv = origPriv;
+    bitjs.compressed = origBitjsCompressed;
+
+    return cashAddr;
+  } catch (error) {
+    console.error("WIF to BCH conversion error:", error);
+    return null;
+  }
+}
+
+/**
+ * Convert WIF private key to Polkadot (DOT) address
+ * Uses Sr25519 (Schnorrkel) keypair with SS58 address encoding (prefix 0 for Polkadot mainnet)
+ * @param {string} wif - WIF format private key
+ * @returns {Promise<string|null>} DOT address (SS58 format) or null on error
+ */
+async function convertWIFtoPolkadotAddress(wif) {
+  try {
+    if (typeof bitjs === "undefined") {
+      throw new Error("bitjs library not loaded");
+    }
+
+    // Access Polkadot library from window object
+    const polkadotAPI = window.polkadotUtilCrypto;
+
+    if (!polkadotAPI) {
+      throw new Error("@polkadot/util-crypto library not loaded");
+    }
+
+    // Wait for WASM crypto to be ready
+    if (typeof polkadotAPI.cryptoWaitReady === "function") {
+      await polkadotAPI.cryptoWaitReady();
+    }
+
+    // Use bitjs.wif2privkey to decode WIF and get the raw private key hex
+    const decoded = bitjs.wif2privkey(wif);
+    if (!decoded || !decoded.privkey) {
+      throw new Error("Failed to decode WIF private key");
+    }
+
+    // Get first 32 bytes (64 hex chars) for Sr25519 seed
+    const privKeyHex = decoded.privkey.substring(0, 64);
+    const privBytes = Crypto.util.hexToBytes(privKeyHex);
+    const seed = new Uint8Array(privBytes.slice(0, 32));
+
+    // Create Sr25519 keypair from seed (Polkadot uses Schnorrkel/Sr25519, not Ed25519)
+    const keyPair = polkadotAPI.sr25519PairFromSeed(seed);
+
+    // Encode address in SS58 format with Polkadot prefix (0)
+    const dotAddress = polkadotAPI.encodeAddress(keyPair.publicKey, 0);
+
+    return dotAddress;
+  } catch (error) {
+    console.error("WIF to Polkadot conversion error:", error);
+    return null;
+  }
+}
+
+/**
+ * Convert WIF private key to Algorand (ALGO) address
+ * Uses Ed25519 keypair with Base32 encoding and SHA-512/256 checksum
+ * @param {string} wif - WIF format private key
+ * @returns {string|null} ALGO address (Base32 format) or null on error
+ */
+function convertWIFtoAlgorandAddress(wif) {
+  try {
+    if (typeof bitjs === "undefined") {
+      throw new Error("bitjs library not loaded");
+    }
+    if (typeof nacl === "undefined") {
+      throw new Error("nacl (TweetNaCl) library not loaded");
+    }
+    if (typeof sha512 === "undefined") {
+      throw new Error("js-sha512 library not loaded");
+    }
+
+    // Use bitjs.wif2privkey to decode WIF and get the raw private key hex
+    const decoded = bitjs.wif2privkey(wif);
+    if (!decoded || !decoded.privkey) {
+      throw new Error("Failed to decode WIF private key");
+    }
+
+    // Get first 32 bytes (64 hex chars) for Ed25519 seed
+    const privKeyHex = decoded.privkey.substring(0, 64);
+    const privBytes = Crypto.util.hexToBytes(privKeyHex);
+    const seed = new Uint8Array(privBytes.slice(0, 32));
+
+    // Generate Ed25519 keypair from seed
+    const keyPair = nacl.sign.keyPair.fromSeed(seed);
+    const pubKey = keyPair.publicKey;
+
+    // Algorand uses SHA-512/256 (32 bytes output) for checksum
+    const hashResult = new Uint8Array(sha512.sha512_256.array(pubKey));
+    const checksum = hashResult.slice(28, 32);
+    const addressBytes = new Uint8Array([...pubKey, ...checksum]);
+
+    // Base32 encode the address
+    const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    let bits = 0;
+    let value = 0;
+    let output = "";
+
+    for (let i = 0; i < addressBytes.length; i++) {
+      value = (value << 8) | addressBytes[i];
+      bits += 8;
+
+      while (bits >= 5) {
+        output += BASE32_ALPHABET[(value >>> (bits - 5)) & 31];
+        bits -= 5;
+      }
+    }
+
+    if (bits > 0) {
+      output += BASE32_ALPHABET[(value << (5 - bits)) & 31];
+    }
+
+    return output;
+  } catch (error) {
+    console.error("WIF to Algorand conversion error:", error);
+    return null;
+  }
+}
+
+/**
+ * Convert WIF private key to Stellar (XLM) address
+ * Uses Ed25519 keypair generation with Stellar-specific encoding
+ * @param {string} wif - The WIF private key
+ * @returns {string} - The Stellar address (starting with 'G')
+ */
+function convertWIFtoStellarAddress(wif) {
+  try {
+    // Helper function to convert hex to bytes
+    function hexToBytes(hex) {
+      const bytes = [];
+      for (let i = 0; i < hex.length; i += 2) {
+        bytes.push(parseInt(hex.substr(i, 2), 16));
+      }
+      return bytes;
+    }
+
+    // Calculate CRC16-XModem checksum (Stellar uses this)
+    function crc16XModem(data) {
+      let crc = 0x0000;
+      for (let i = 0; i < data.length; i++) {
+        crc ^= data[i] << 8;
+        for (let j = 0; j < 8; j++) {
+          if (crc & 0x8000) {
+            crc = (crc << 1) ^ 0x1021;
+          } else {
+            crc = crc << 1;
+          }
+        }
+      }
+      return crc & 0xffff;
+    }
+
+    // Decode WIF to get private key (32 bytes)
+    const privKeyHex = bitjs.wif2privkey(wif).privkey;
+    const privBytes = hexToBytes(privKeyHex);
+    const seed = new Uint8Array(privBytes.slice(0, 32));
+
+    // Generate Ed25519 keypair from seed using TweetNaCl
+    const keyPair = nacl.sign.keyPair.fromSeed(seed);
+    const pubKey = keyPair.publicKey;
+
+    // Stellar address encoding: version byte (0x30 for public key 'G') + public key + CRC16-XModem checksum
+    const versionByte = 0x30; // Results in 'G' prefix for public keys
+    const payload = new Uint8Array([versionByte, ...pubKey]);
+
+    const checksum = crc16XModem(payload);
+    // Checksum is stored in little-endian format
+    const checksumBytes = new Uint8Array([
+      checksum & 0xff,
+      (checksum >> 8) & 0xff,
+    ]);
+    const addressBytes = new Uint8Array([...payload, ...checksumBytes]);
+
+    // Base32 encode the address (RFC 4648)
+    const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    let bits = 0;
+    let value = 0;
+    let output = "";
+
+    for (let i = 0; i < addressBytes.length; i++) {
+      value = (value << 8) | addressBytes[i];
+      bits += 8;
+
+      while (bits >= 5) {
+        output += BASE32_ALPHABET[(value >>> (bits - 5)) & 31];
+        bits -= 5;
+      }
+    }
+
+    if (bits > 0) {
+      output += BASE32_ALPHABET[(value << (5 - bits)) & 31];
+    }
+
+    return output;
+  } catch (error) {
+    console.error("WIF to Stellar conversion error:", error);
+    return null;
+  }
+}
+
+/**
+ * Convert WIF private key to Solana (SOL) address
+ * Uses Ed25519 keypair generation with Base58 encoding
+ * @param {string} wif - The WIF private key
+ * @returns {string} - The Solana address (Base58 encoded public key)
+ */
+function convertWIFtoSolanaAddress(wif) {
+  try {
+    // Helper function to convert hex to bytes
+    function hexToBytes(hex) {
+      const bytes = [];
+      for (let i = 0; i < hex.length; i += 2) {
+        bytes.push(parseInt(hex.substr(i, 2), 16));
+      }
+      return bytes;
+    }
+
+    // Decode WIF to get private key (32 bytes)
+    const privKeyHex = bitjs.wif2privkey(wif).privkey;
+    const privBytes = hexToBytes(privKeyHex);
+    const seed = new Uint8Array(privBytes.slice(0, 32));
+
+    // Generate Ed25519 keypair from seed
+    // Use Solana Web3.js Keypair.fromSeed()
+    if (typeof solanaWeb3 === "undefined") {
+      throw new Error("Solana Web3.js library not loaded");
+    }
+
+    const keypair = solanaWeb3.Keypair.fromSeed(seed);
+    const solanaAddress = keypair.publicKey.toString();
+
+    return solanaAddress;
+  } catch (error) {
+    console.error("WIF to Solana conversion error:", error);
+    return null;
+  }
+}
+
+/**
+ * Convert WIF private key to Cardano (ADA) address
+ * Uses cardanoCrypto library for address derivation
+ * @param {string} wif - WIF format private key
+ * @returns {Promise<string|null>} Cardano address or null on error
+ */
+async function convertWIFtoCardanoAddress(wif) {
+  try {
+    if (typeof window.cardanoCrypto === "undefined") {
+      throw new Error("cardanoCrypto library not loaded");
+    }
+
+    // Use cardanoCrypto.importFromKey to derive all addresses from WIF
+    const wallet = await window.cardanoCrypto.importFromKey(wif);
+
+    if (!wallet || !wallet.Cardano || !wallet.Cardano.address) {
+      throw new Error("Failed to derive Cardano address");
+    }
+
+    return wallet.Cardano.address;
+  } catch (error) {
+    console.error("WIF to Cardano conversion error:", error);
     return null;
   }
 }
