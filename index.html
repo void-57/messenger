@@ -308,7 +308,7 @@
                 <p>Welcome back, glad to see you again</p>
                 <sm-form id="sign_in_form">
                     <sm-input id="private_key_field" class="password-field" type="password"
-                        placeholder="FLO/BTC/ETH private key" error-text="Private key is invalid" data-private-key
+                        placeholder="Enter Blockchain Private Key" error-text="Private key is invalid" data-private-key
                         required>
                         <label slot="right" class="interact">
                             <input type="checkbox" class="hidden" autocomplete="off" readonly
@@ -428,7 +428,7 @@
                 <div id="chat_sections">
                     <div class="flex flex-direction-column gap-0-5" style="overflow: hidden;">
                         <div class="flex align-center gap-0-5" style="padding: 0 1rem;">
-                            <sm-input id="search_chats" type="search" placeholder="FLO/BTC/ETH address or name">
+                            <sm-input id="search_chats" type="search" placeholder="Blockchain address or name">
                                 <svg slot="icon" class="icon" xmlns="http://www.w3.org/2000/svg" height="24px"
                                     viewBox="0 0 24 24" width="24px" fill="#000000">
                                     <path d="M0 0h24v24H0V0z" fill="none" />
@@ -1013,7 +1013,7 @@
                     <div id="select_contacts_container" class="observe-empty-state"></div>
                     <div class="empty-state">
                         <h4 class="margin-bottom-0-5">No saved contacts.</h4>
-                        <p class="margin-bottom-1">Use 'Add contact' to add new FLO/BTC/ETH address as a contact.</p>
+                        <p class="margin-bottom-1">Use 'Add contact' to add a new blockchain address as a contact.</p>
                         <button class="button interactive" onclick="openPopup('add_contact_popup')">
                             <svg class="icon margin-right-0-5" xmlns="http://www.w3.org/2000/svg"
                                 enable-background="new 0 0 24 24" height="24px" viewBox="0 0 24 24" width="24px"
@@ -2720,7 +2720,7 @@
                     } else {
                         floGlobals.isPrivKeySecured = false;
                         getRef('private_key_field').dataset.privateKey = ''
-                        getRef('private_key_field').setAttribute('placeholder', 'FLO/BTC/ETH private key');
+                        getRef('private_key_field').setAttribute('placeholder', 'Enter Blockchain Private Key');
                         getRef('private_key_field').customValidation = (value) => {
                             if (!value) return { isValid: false, errorText: 'Please enter a private key' }
                             return {
@@ -4287,7 +4287,7 @@
             let addressToSave = getRef('add_contact_floID').value.trim();
             let name = getRef('add_contact_name').value.trim();
             if (floCrypto.isSameAddr(addressToSave, floDapps.user.id) || floCrypto.myEthID === addressToSave) {
-                notify(`you can't add your own FLO/BTC/ETH address as contact`, 'error')
+                notify(`you can't add your own blockchain address as contact`, 'error')
                 return
             }
             if (floGlobals.contacts.hasOwnProperty(addressToSave)) {
