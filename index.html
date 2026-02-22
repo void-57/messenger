@@ -263,6 +263,7 @@
             <button class="button w-100" onclick="resolveBlockchainSelection('TRON')">TRON</button>
             <button class="button w-100" onclick="resolveBlockchainSelection('DOT')">Polkadot (DOT)</button>
             <button class="button w-100" onclick="resolveBlockchainSelection('SOL')">Solana (SOL)</button>
+            <button class="button w-100" onclick="resolveBlockchainSelection('HBAR')">Hedera (HBAR)</button>
         </div>
         <div class="flex align-center gap-0-5 margin-top-1 margin-left-auto">
             <button class="button cancel-button" onclick="resolveBlockchainSelection(null)">Cancel</button>
@@ -2723,9 +2724,16 @@
                         getRef('private_key_field').setAttribute('placeholder', 'Enter Blockchain Private Key');
                         getRef('private_key_field').customValidation = (value) => {
                             if (!value) return { isValid: false, errorText: 'Please enter a private key' }
+                            let isValid = false;
+                            let checkVal = value.startsWith('0x') ? value.substring(2) : value;
+                            if (/^[0-9a-fA-F]{64}$/.test(checkVal) || /^[0-9a-fA-F]{128}$/.test(checkVal)) {
+                                isValid = true;
+                            } else {
+                                try { isValid = !!floCrypto.getPubKeyHex(value); } catch (e) { }
+                            }
                             return {
-                                isValid: floCrypto.getPubKeyHex(value),
-                                errorText: `Invalid private key.<br> It's a long string of random characters usually starting with 'R'.`
+                                isValid,
+                                errorText: `Invalid private key.<br> Please enter a valid WIF or Hex string.`
                             }
                         };
                     }
@@ -2734,9 +2742,12 @@
                     }
                     getRef('sign_in_button').onclick = async () => {
                         let privateKey = getRef('private_key_field').value.trim();
+                        // For users who prefix their hex keys with 0x
+                        if (privateKey.startsWith('0x')) privateKey = privateKey.substring(2);
+
                         let activeChain = null;
 
-                        if (/^[0-9a-fA-F]{64}$/.test(privateKey)) { //if hex private key might be ethereum, ADA, SOL, TRON, DOT
+                        if (/^[0-9a-fA-F]{64}$/.test(privateKey)) { //if hex private key might be ethereum, ADA, SOL, TRON, DOT, HBAR
                             activeChain = await new Promise(resolve => {
                                 _blockchainResolve = resolve;
                                 openPopup('blockchain_select_popup');
@@ -2748,12 +2759,18 @@
                             let key = new Bitcoin.ECKey(privateKey);
                             key.setCompressed(true);
                             privateKey = key.getBitcoinWalletImportFormat();
+                        } else if (/^[0-9a-fA-F]{128}$/.test(privateKey)) {
+                            activeChain = 'TON';
+                            // Convert 128-char TON ed25519 key to workable FLO WIF using the first 32-bytes (seed)
+                            let key = new Bitcoin.ECKey(privateKey.substring(0, 64));
+                            key.setCompressed(true);
+                            privateKey = key.getBitcoinWalletImportFormat();
                         } else {
                             if (privateKey.startsWith('suiprivkey1')) activeChain = 'SUI';
                             else if (privateKey.startsWith('s')) activeChain = 'XRP';
                             else if (privateKey.startsWith('Q')) activeChain = 'DOGE';
                             else if (privateKey.startsWith('T') && privateKey.length === 51) activeChain = 'LTC';
-                            else if (privateKey.startsWith('K') || privateKey.startsWith('L') ) activeChain = 'BTC';
+                            else if (privateKey.startsWith('K') || privateKey.startsWith('L')) activeChain = 'BTC';
                             else if (privateKey.startsWith('S') && privateKey.length === 56) activeChain = 'XLM';
                             else if (privateKey.startsWith('R')) activeChain = 'FLO';
                             else activeChain = 'UNKNOWN';
