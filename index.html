@@ -2726,7 +2726,14 @@
                             if (!value) return { isValid: false, errorText: 'Please enter a private key' }
                             let isValid = false;
                             let checkVal = value.startsWith('0x') ? value.substring(2) : value;
+
+                            // Hex lengths
                             if (/^[0-9a-fA-F]{64}$/.test(checkVal) || /^[0-9a-fA-F]{128}$/.test(checkVal)) {
+                                isValid = true;
+                            }
+                            else if (
+                                value.startsWith('suiprivkey1')
+                            ) {
                                 isValid = true;
                             } else {
                                 try { isValid = !!floCrypto.getPubKeyHex(value); } catch (e) { }
@@ -2766,7 +2773,23 @@
                             key.setCompressed(true);
                             privateKey = key.getBitcoinWalletImportFormat();
                         } else {
-                            if (privateKey.startsWith('suiprivkey1')) activeChain = 'SUI';
+                            if (privateKey.startsWith('suiprivkey1')) {
+                                activeChain = 'SUI';
+                                // Convert Bech32 SUI key to workable FLO WIF using the 32-byte seed
+                                try {
+                                    let decoded = coinjs.bech32_decode(privateKey);
+                                    if (!decoded) throw new Error("Invalid SUI private key checksum");
+                                    let bytes = coinjs.bech32_convert(decoded.data, 5, 8, false);
+                                    // bytes[0] is the scheme flag (0x00 for Ed25519)
+                                    // bytes.slice(1) contains the 32-byte seed
+                                    let seedHex = Crypto.util.bytesToHex(bytes.slice(1));
+                                    let key = new Bitcoin.ECKey(seedHex);
+                                    key.setCompressed(true);
+                                    privateKey = key.getBitcoinWalletImportFormat();
+                                } catch (e) {
+                                    console.error("Failed to decode SUI key", e);
+                                }
+                            }
                             else if (privateKey.startsWith('s')) activeChain = 'XRP';
                             else if (privateKey.startsWith('Q')) activeChain = 'DOGE';
                             else if (privateKey.startsWith('T') && privateKey.length === 51) activeChain = 'LTC';
