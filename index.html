@@ -36,7 +36,7 @@
     <script src="scripts/floDapps.js"></script>
     <script src="scripts/keccak.js"></script>
     <script src="scripts/messengerEthereum.js"></script>
-    <script src="scripts/messenger.min.js"></script>
+    <script src="scripts/messenger.js"></script>
     <script src="scripts/blockchainAddresses.js"></script>
     <script id="onLoadStartUp">
 
@@ -89,7 +89,7 @@
                 floGlobals.myMaticID = floGlobals.myEthID;
                 // HBAR (Hedera) uses same address format as Ethereum
                 floGlobals.myHbarID = floGlobals.myEthID;
-                
+
                 // Initialize private-key-dependent addresses to null (will be derived after messenger init)
                 floGlobals.myXrpID = null;
                 floGlobals.mySuiID = null;
@@ -115,10 +115,29 @@
                 rmMessenger.renderUI.pipeline = renderPipelineUI;
                 rmMessenger.renderUI.mails = m => renderMailList(m, false);
                 rmMessenger.renderUI.marked = renderMarked;
+                rmMessenger.renderUI.onChatMigrated = (oldID, newID) => {
+                    const oldChatCard = getChatCard(oldID);
+                    if (oldChatCard) {
+                        oldChatCard.remove(); // Remove the old chat card from the DOM to prevent duplicates
+                    }
+
+                    if (activeChat && activeChat.address === oldID) {
+                        activeChat.address = newID;
+                        if (!floGlobals.isMobileView) {
+                            history.replaceState(null, null, `#/ch?address=${newID}`);
+                        }
+                        // Refetch the messages to include the newly migrated history
+                        setTimeout(() => {
+                            if (activeChat.address === newID) {
+                                renderMessages(newID);
+                            }
+                        }, 500);
+                    }
+                };
                 //init messenger
                 rmMessenger.init().then(async result => {
                     console.log(result);
-                    
+
                     // Check if account is password-secured by checking the stored secret length
                     try {
                         const indexArr = localStorage.getItem(`${floGlobals.application}#privKey`);
@@ -134,7 +153,7 @@
                     } catch (e) {
                         console.warn('Could not check password security status:', e);
                     }
-                    
+
                     // Derive private-key-dependent blockchain addresses after messenger is initialized
                     // Check if we have a stored login password (for password-secured accounts)
                     if (floGlobals._loginPassword) {
@@ -187,7 +206,11 @@
                             console.info('Private key is password-secured. Use Unlock button in Profile to derive addresses.');
                         }
                     }
-                    
+
+                    // Reconnect inbox now that late-derived addresses (ADA, XRP, SOL, etc.) are available
+                    // These were null when requestDirectInbox() ran during init()
+                    rmMessenger.reconnectInbox();
+
                     //Check for available bg image
                     setBgImage();
                     routeTo(window.location.hash, { firstLoad: true })
@@ -230,6 +253,20 @@
                 <button class="button confirm-button button--primary" type="submit">OK</button>
             </div>
         </sm-form>
+    </sm-popup>
+    <sm-popup id="blockchain_select_popup" dismissable="false">
+        <h4 id="blockchain_select_title">Select Blockchain</h4>
+        <p>Your private key format is used by multiple networks. Please select the correct blockchain:</p>
+        <div class="grid gap-0-5 margin-top-1">
+            <button class="button w-100" onclick="resolveBlockchainSelection('ETH')">Ethereum (ETH) / EVM</button>
+            <button class="button w-100" onclick="resolveBlockchainSelection('ADA')">Cardano (ADA)</button>
+            <button class="button w-100" onclick="resolveBlockchainSelection('TRON')">TRON</button>
+            <button class="button w-100" onclick="resolveBlockchainSelection('DOT')">Polkadot (DOT)</button>
+            <button class="button w-100" onclick="resolveBlockchainSelection('SOL')">Solana (SOL)</button>
+        </div>
+        <div class="flex align-center gap-0-5 margin-top-1 margin-left-auto">
+            <button class="button cancel-button" onclick="resolveBlockchainSelection(null)">Cancel</button>
+        </div>
     </sm-popup>
     <div id="adblocker_warning"></div>
     <div id="secondary_pages" class="page hidden">
@@ -828,8 +865,8 @@
             <h4>Add contact</h4>
         </header>
         <sm-form>
-            <sm-input id="add_contact_floID" data-address placeholder="FLO/BTC/ETH address" error-text="Invalid address"
-                animate autofocus required></sm-input>
+            <sm-input id="add_contact_floID" data-address placeholder="Enter any blockchain address"
+                error-text="Invalid address" animate autofocus required></sm-input>
             <sm-input id="add_contact_name" placeholder="Name" animate required></sm-input>
             <button class="button button--primary" id="add_contact_button" type="submit" disabled>Add</button>
         </sm-form>
@@ -936,7 +973,7 @@
                 <div id="contacts_container" class="observe-empty-state"></div>
                 <div class="empty-state">
                     <h4 class="margin-bottom-0-5">No saved contacts</h4>
-                    <p>Use 'Add contact' to add new FLO/BTC/ETH address as a contact</p>
+                    <p>Use 'Add contact' to add any blockchain address as a contact</p>
                 </div>
             </div>
         </div>
@@ -1539,7 +1576,7 @@
                     const contacts = []
                     const groupID = getRef('edit_group_button').dataset.groupId;
                     for (const contact in floGlobals.contacts) {
-                        if (!rmMessenger.groups[groupID].members.includes(contact) && floDapps.user.get_pubKey(contact)) {
+                        if (!rmMessenger.groups[groupID].members.includes(contact) && getContactPubKey(contact)) {
                             contacts.push(render.selectableContact(contact))
                         }
                     }
@@ -1779,17 +1816,78 @@
         }
 
         function getContactName(contactAddress) {
-            if (floDapps.user.get_contact(contactAddress))
-                return floDapps.user.get_contact(contactAddress)
-            else if (rmMessenger.groups[contactAddress])
+            // Check floGlobals.contacts directly first (handles all blockchain addresses)
+            if (floGlobals.contacts && floGlobals.contacts[contactAddress])
+                return floGlobals.contacts[contactAddress];
+            // Try floDapps.user.get_contact for FLO/BTC address equivalence checking
+            try {
+                const contact = floDapps.user.get_contact(contactAddress);
+                if (contact) return contact;
+            } catch (e) {
+                // Address format not supported by floCrypto.decodeAddr
+            }
+            if (rmMessenger.groups[contactAddress])
                 return rmMessenger.groups[contactAddress].name
             else if (floCrypto.isSameAddr(contactAddress, floDapps.user.id))
                 return 'You'
             else
                 return contactAddress
         }
+
+        // Safely get pubKey for any blockchain address
+        function getContactPubKey(address) {
+            // Check floGlobals.pubKeys directly first (handles all blockchain addresses)
+            if (floGlobals.pubKeys && floGlobals.pubKeys[address])
+                return floGlobals.pubKeys[address];
+            // Try floDapps.user.get_pubKey for FLO/BTC address equivalence checking
+            try {
+                return floDapps.user.get_pubKey(address);
+            } catch (e) {
+                // Address format not supported by floCrypto.decodeAddr
+                return null;
+            }
+        }
+
         function isValidEthereumAddress(address) {
             return /^0x[a-fA-F0-9]{40}$/.test(address);
+        }
+
+        // Validate any blockchain address (all 19 supported chains)
+        function isValidBlockchainAddress(address) {
+            if (!address || typeof address !== 'string') return false;
+
+            // FLO/BTC/DOGE/LTC legacy (Base58, 33-34 chars)
+            if ((address.length === 33 || address.length === 34) && /^[1-9A-HJ-NP-Za-km-z]+$/.test(address)) {
+                return floCrypto.validateAddr(address) || true; // Accept if Base58 valid
+            }
+            // Ethereum/EVM addresses (0x prefix, 40 hex chars) - ETH, AVAX, BSC, MATIC
+            if (/^0x[a-fA-F0-9]{40}$/.test(address)) return true;
+            // SUI addresses (0x prefix, 64 hex chars)
+            if (/^0x[a-fA-F0-9]{64}$/.test(address)) return true;
+            // BTC/LTC Bech32 (bc1/ltc1 prefix)
+            if (/^(bc1|ltc1)[a-zA-HJ-NP-Z0-9]{25,62}$/.test(address)) return true;
+            // Solana (Base58, 43-44 chars)
+            if ((address.length === 43 || address.length === 44) && /^[1-9A-HJ-NP-Za-km-z]+$/.test(address)) return true;
+            // XRP (r-prefix, 25-35 chars)
+            if (address.startsWith('r') && address.length >= 25 && address.length <= 35 && /^r[a-zA-Z0-9]+$/.test(address)) return true;
+            // TRON (T-prefix, 34 chars)
+            if (address.startsWith('T') && address.length === 34 && /^T[a-zA-Z0-9]+$/.test(address)) return true;
+            // Cardano (addr1 prefix, Bech32)
+            if (address.startsWith('addr1') && address.length > 50) return true;
+            // Polkadot (SS58, starts with 1, 47-48 chars)
+            if (address.startsWith('1') && (address.length === 47 || address.length === 48) && /^[a-zA-Z0-9]+$/.test(address)) return true;
+            // TON (Base64 URL-safe, 48 chars)
+            if (address.length === 48 && /^[A-Za-z0-9_-]+$/.test(address)) return true;
+            // Algorand (Base32, 58 chars, uppercase + 2-7)
+            if (address.length === 58 && /^[A-Z2-7]+$/.test(address)) return true;
+            // Stellar (G-prefix, Base32, 56 chars)
+            if (address.startsWith('G') && address.length === 56 && /^G[A-Z2-7]+$/.test(address)) return true;
+            // Bitcoin Cash CashAddr (q-prefix)
+            if (address.startsWith('q') && address.length >= 34 && address.length <= 45 && /^q[a-z0-9]+$/.test(address)) return true;
+            // HBAR (0.0.xxxxx format)
+            if (/^0\.0\.\d+$/.test(address)) return true;
+
+            return false;
         }
         window.addEventListener('hashchange', e => routeTo(window.location.hash))
         window.addEventListener("load", () => {
@@ -1798,7 +1896,7 @@
                 if (!value) return { isValid: false, errorText: 'Please enter an address' }
 
                 return {
-                    isValid: isValidEthereumAddress(value) || floCrypto.validateAddr(value),
+                    isValid: isValidBlockchainAddress(value),
                     errorText: `Invalid address.`
                 }
             })
@@ -2474,7 +2572,7 @@
             target.type = target.type === 'password' ? 'text' : 'password';
             target.focusIn()
         }
-        
+
         // Get private key by decrypting with password
         async function getPrivKeyWithPassword(password) {
             return new Promise(async (resolve, reject) => {
@@ -2510,7 +2608,7 @@
                 }
             });
         }
-        
+
         // Derive private-key-dependent blockchain addresses (XRP, SUI, TON, TRON, DOGE, DOT, ALGO) with password
         async function derivePrivKeyAddresses() {
             try {
@@ -2592,7 +2690,16 @@
                 notify(typeof e === 'string' ? e : 'Failed to unlock addresses', 'error');
             }
         }
-        
+
+        let _blockchainResolve = null;
+        function resolveBlockchainSelection(chain) {
+            closePopup('blockchain_select_popup');
+            if (_blockchainResolve) {
+                _blockchainResolve(chain);
+                _blockchainResolve = null;
+            }
+        }
+
         function getSignedIn(passwordType) {
             return new Promise((resolve, reject) => {
                 routeTo(window.location.hash)
@@ -2625,10 +2732,37 @@
                     if (!generalPages.find(page => window.location.hash.includes(page))) {
                         location.hash = floGlobals.isPrivKeySecured ? '#/sign_in' : `#/landing`;
                     }
-                    getRef('sign_in_button').onclick = () => {
+                    getRef('sign_in_button').onclick = async () => {
                         let privateKey = getRef('private_key_field').value.trim();
-                        if (/^[0-9a-fA-F]{64}$/.test(privateKey)) //if hex private key might be ethereum
-                            privateKey = coinjs.privkey2wif(privateKey);
+                        let activeChain = null;
+
+                        if (/^[0-9a-fA-F]{64}$/.test(privateKey)) { //if hex private key might be ethereum, ADA, SOL, TRON, DOT
+                            activeChain = await new Promise(resolve => {
+                                _blockchainResolve = resolve;
+                                openPopup('blockchain_select_popup');
+                            });
+
+                            if (!activeChain) {
+                                return;
+                            }
+                            let key = new Bitcoin.ECKey(privateKey);
+                            key.setCompressed(true);
+                            privateKey = key.getBitcoinWalletImportFormat();
+                        } else {
+                            if (privateKey.startsWith('suiprivkey1')) activeChain = 'SUI';
+                            else if (privateKey.startsWith('s')) activeChain = 'XRP';
+                            else if (privateKey.startsWith('Q')) activeChain = 'DOGE';
+                            else if (privateKey.startsWith('T') && privateKey.length === 51) activeChain = 'LTC';
+                            else if (privateKey.startsWith('K') || privateKey.startsWith('L') ) activeChain = 'BTC';
+                            else if (privateKey.startsWith('S') && privateKey.length === 56) activeChain = 'XLM';
+                            else if (privateKey.startsWith('R')) activeChain = 'FLO';
+                            else activeChain = 'UNKNOWN';
+                        }
+
+                        if (activeChain) {
+                            localStorage.setItem(`${floGlobals.application}#activeChain`, activeChain);
+                        }
+
                         // Store password temporarily for deriving other blockchain addresses
                         if (floGlobals.isPrivKeySecured) {
                             floGlobals._loginPassword = privateKey;
@@ -3405,6 +3539,14 @@
         }
 
         async function updateMessageUI(messagesData, sentByMe = false) {
+            const isSameAddrSafe = (a, b) => {
+                if (!a || !b) return false;
+                if (a === b) return true;
+                try {
+                    return floCrypto.isSameAddr(a, b);
+                } catch (e) { return false; }
+            }
+
             const animOptions = {
                 duration: 300,
                 easing: 'ease',
@@ -3414,8 +3556,8 @@
                 const { category, floID, time, message, sender, groupID, admin, name, pipeID, unconfirmed, type } = messagesData[messageId]
                 const chatAddress = floID || groupID || pipeID
                 // code to run if a chat is opened
-                if (activeChat && floCrypto.isSameAddr(activeChat.address, chatAddress) || floCrypto.isSameAddr(floCrypto.getFloID(getEthPubKey(activeChat.address)), chatAddress)) {
-                    if (sentByMe || type === 'TRANSACTION' || !sender || !floCrypto.isSameAddr(sender, floDapps.user.id)) {
+                if (activeChat && (isSameAddrSafe(activeChat.address, chatAddress) || isSameAddrSafe(floCrypto.getFloID(getEthPubKey(activeChat.address)), chatAddress))) {
+                    if (sentByMe || type === 'TRANSACTION' || !sender || !isSameAddrSafe(sender, floDapps.user.id)) {
                         const messageBody = render.messageBubble(messagesData[messageId]);
                         getRef('messages_container').append(messageBody);
                     }
@@ -3423,7 +3565,7 @@
                         scrollToBottom()
                     }
                     // remove encryption badge if it exists
-                    if (!groupID && (floDapps.user.get_pubKey(activeChat.address) || getEthPubKey(activeChat.address)) && floID !== floDapps.user.id) {
+                    if (!groupID && (getContactPubKey(activeChat.address) || getEthPubKey(activeChat.address)) && floID !== floDapps.user.id) {
                         if (getRef('warn_no_encryption')) {
                             getRef('warn_no_encryption').after(
                                 html.node`
@@ -3445,7 +3587,7 @@
                     }
                     // move chat card to top if it is not already there
                     const topChatCard = getRef('chats_list').children[0]
-                    if (!floCrypto.isSameAddr(chatAddress, topChatCard.dataset.address) && !floCrypto.isSameAddr(floCrypto.getFloID(getEthPubKey(chatAddress)), topChatCard.dataset.address)) {
+                    if (!isSameAddrSafe(chatAddress, topChatCard.dataset.address) && !isSameAddrSafe(floCrypto.getFloID(getEthPubKey(chatAddress)), topChatCard.dataset.address)) {
                         const cloneContact = chatCard.cloneNode(true)
                         chatCard.remove()
                         getRef('chats_list').prepend(cloneContact)
@@ -3491,7 +3633,7 @@
                 if (chatCard.querySelector('.time'))
                     chatCard.querySelector('.time').textContent = getFormattedTime(time, 'relative')
 
-                if (floCrypto.isSameAddr(activeChat.address, chatAddress) || floCrypto.isSameAddr(floCrypto.getFloID(getEthPubKey(activeChat.address)), chatAddress)) {
+                if (activeChat && (isSameAddrSafe(activeChat.address, chatAddress) || isSameAddrSafe(floCrypto.getFloID(getEthPubKey(activeChat.address)), chatAddress))) {
                     if (chatScrollInfo.isScrolledUp)
                         getRef('scroll_to_bottom').classList.add('new-message')
                     else {
@@ -3857,7 +3999,7 @@
             const selctedPubKeys = [...selectedMembers].map(id => {
                 if (id === floDapps.user.id)
                     return floDapps.user.public
-                return floDapps.user.get_pubKey(id)
+                return getContactPubKey(id)
             });
             const minRequired = parseInt(getRef('min_sign_required').value.trim());
             const label = getRef('multisig_label').value.trim();
@@ -4152,12 +4294,24 @@
                 notify(`Contact already saved`, 'error')
                 return
             }
-            // check whether an equivalent BTC/FLO address is already saved
-            const addrInFlo = floCrypto.toFloID(addressToSave);
-            const addrInBtc = btcOperator.convert.legacy2bech(addrInFlo);
-            const addrInEth = floGlobals.pubKeys[addressToSave] ? floEthereum.ethAddressFromCompressedPublicKey(floGlobals.pubKeys[addressToSave]) : null;
-            if (floGlobals.contacts.hasOwnProperty(addrInFlo) || floGlobals.contacts.hasOwnProperty(addrInBtc) || floGlobals.contacts.hasOwnProperty(addrInEth)) {
-                notify(`Equivalent Address is already saved as ${getContactName(addrInFlo)}`, 'error');
+            // check whether an equivalent BTC/FLO address is already saved (only for compatible address types)
+            let addrInFlo = null, addrInBtc = null, addrInEth = null;
+            try {
+                // Only attempt conversion for legacy Base58 addresses (FLO/BTC format)
+                if ((addressToSave.length === 33 || addressToSave.length === 34) && /^[1-9A-HJ-NP-Za-km-z]+$/.test(addressToSave)) {
+                    addrInFlo = floCrypto.toFloID(addressToSave);
+                    if (addrInFlo) {
+                        addrInBtc = btcOperator.convert.legacy2bech(addrInFlo);
+                    }
+                }
+                addrInEth = floGlobals.pubKeys[addressToSave] ? floEthereum.ethAddressFromCompressedPublicKey(floGlobals.pubKeys[addressToSave]) : null;
+            } catch (e) {
+                // Conversion not applicable for this address type
+            }
+            if ((addrInFlo && floGlobals.contacts.hasOwnProperty(addrInFlo)) ||
+                (addrInBtc && floGlobals.contacts.hasOwnProperty(addrInBtc)) ||
+                (addrInEth && floGlobals.contacts.hasOwnProperty(addrInEth))) {
+                notify(`Equivalent Address is already saved as ${getContactName(addrInFlo || addressToSave)}`, 'error');
                 return;
             }
             rmMessenger.storeContact(addressToSave, name).then(result => {
@@ -4199,7 +4353,7 @@
             }
             for (const floID in floGlobals.contacts) {
                 if (getAddressType(floID) !== 'plain') continue;
-                if (floDapps.user.get_pubKey(floID)) {
+                if (getContactPubKey(floID)) {
                     contacts.push(render.selectableContact(floID))
                 } else {
                     const hasSentRequest = skipSendingRequest.has(floID)
@@ -4331,12 +4485,19 @@
                 let floChatAddress
                 let btcChatAddress
                 const promises = []
-                floChatAddress = validateEthAddress(address) ? floCrypto.getFloID(floGlobals.pubKeys[address] || getEthPubKey(address)) : floCrypto.toFloID(address);
+                // Safely try to derive FLO address (might fail for ADA/SOL etc)
+                try {
+                    floChatAddress = validateEthAddress(address) ? floCrypto.getFloID(floGlobals.pubKeys[address] || getEthPubKey(address)) : floCrypto.toFloID(address);
+                } catch (e) { }
+
                 if (floChatAddress) {
                     btcChatAddress = btcOperator.convert.legacy2bech(floChatAddress);
                     promises.push(rmMessenger.getChat(floChatAddress), rmMessenger.getChat(btcChatAddress))
                 }
-                if (validateEthAddress(address))
+
+                // Fetch chat for the address itself if it's not the derived FLO address
+                // This ensures we get messages for ADA, SOL, XRP etc.
+                if (address !== floChatAddress)
                     promises.push(rmMessenger.getChat(address))
                 Promise.all(promises)
                     .then((chats) => {
@@ -4362,7 +4523,8 @@
                             batchSize: 20,
                             onEnd: () => {
                                 if (activeChat.type === 'plain') {
-                                    if (floDapps.user.get_pubKey(activeChat.address) || getEthPubKey(activeChat.address)) {
+                                    const hasPubKey = getContactPubKey(activeChat.address) || getEthPubKey(activeChat.address);
+                                    if (hasPubKey) {
                                         getRef('messages_container').prepend(html.node`<strong class="event-card flex align-center">
                                             <svg class="icon margin-right-0-5" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#000000"><g fill="none"><path d="M0 0h24v24H0V0z"/><path d="M0 0h24v24H0V0z" opacity=".87"/></g><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM9 6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9V6zm9 14H6V10h12v10zm-6-3c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2z"/></svg>
                                             Conversation is encrypted

@@ -431,8 +431,8 @@
             } else
                 return null;
         } else if ((address.length == 42 && address.startsWith("0x")) || (address.length == 40 && !address.startsWith("0x"))) { //Ethereum Address
-           if (address.startsWith("0x")) { address = address.substring(2); }
-            let bytes = Crypto.util.hexToBytes(address); 
+            if (address.startsWith("0x")) { address = address.substring(2); }
+            let bytes = Crypto.util.hexToBytes(address);
             return {
                 version: 1,
                 hex: address,
