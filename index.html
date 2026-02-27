@@ -87,6 +87,10 @@
                 floGlobals.myBscID = floGlobals.myEthID;
                 // MATIC (Polygon) uses same address format as Ethereum
                 floGlobals.myMaticID = floGlobals.myEthID;
+                // Arbitrum uses same address format as Ethereum
+                floGlobals.myArbID = floGlobals.myEthID;
+                // Optimism uses same address format as Ethereum
+                floGlobals.myOpID = floGlobals.myEthID;
                 // HBAR (Hedera) uses same address format as Ethereum
                 floGlobals.myHbarID = floGlobals.myEthID;
 
@@ -264,6 +268,8 @@
             <button class="button w-100" onclick="resolveBlockchainSelection('DOT')">Polkadot (DOT)</button>
             <button class="button w-100" onclick="resolveBlockchainSelection('SOL')">Solana (SOL)</button>
             <button class="button w-100" onclick="resolveBlockchainSelection('HBAR')">Hedera (HBAR)</button>
+            <button class="button w-100" onclick="resolveBlockchainSelection('ARB')">Arbitrum (ARB)</button>
+            <button class="button w-100" onclick="resolveBlockchainSelection('OP')">Optimism (OP)</button>
         </div>
         <div class="flex align-center gap-0-5 margin-top-1 margin-left-auto">
             <button class="button cancel-button" onclick="resolveBlockchainSelection(null)">Cancel</button>
@@ -2062,15 +2068,17 @@
                     removeNotificationBadge('#chat_page_button')
                     if (floGlobals.idInterval)
                         clearInterval(floGlobals.idInterval)
-                    // Cycle through all blockchain addresses: FLO -> BTC -> ETH -> AVAX -> BSC -> MATIC -> HBAR -> XRP -> SUI -> TON -> TRON -> DOGE -> LTC -> BCH -> DOT -> ALGO -> XLM -> SOL
+                    let activeChain = localStorage.getItem(`${floGlobals.application}#activeChain`) || 'FLO';
                     let currentIdIndex = 0
-                    const idList = [
+                    const allIds = [
                         { id: floGlobals.myFloID, label: 'FLO' },
                         { id: floGlobals.myBtcID, label: 'BTC' },
                         { id: floGlobals.myEthID, label: 'ETH' },
                         { id: floGlobals.myAvaxID, label: 'AVAX' },
                         { id: floGlobals.myBscID, label: 'BSC' },
                         { id: floGlobals.myMaticID, label: 'MATIC' },
+                        { id: floGlobals.myArbID, label: 'ARB' },
+                        { id: floGlobals.myOpID, label: 'OP' },
                         { id: floGlobals.myHbarID, label: 'HBAR' },
                         { id: floGlobals.myXrpID, label: 'XRP' },
                         { id: floGlobals.mySuiID, label: 'SUI' },
@@ -2084,7 +2092,16 @@
                         { id: floGlobals.myXlmID, label: 'XLM' },
                         { id: floGlobals.mySolID, label: 'SOL' },
                         { id: floGlobals.myAdaID, label: 'ADA' }
-                    ].filter(item => item.id)
+                    ];
+
+                    const idList = allIds.filter(item => {
+                        if (!item.id) return false;
+                        if (item.label === 'FLO') return true; // Always include FLO
+                        if (item.label === activeChain) return true; // Include active chain
+                        // For EVM compatible chains which share the ETH ID:
+                        if (['ETH', 'AVAX', 'BSC', 'MATIC', 'ARB', 'OP', 'HBAR'].includes(activeChain) && item.label === activeChain) return true;
+                        return false;
+                    });
                     floGlobals.idInterval = setInterval(() => {
                         currentIdIndex = (currentIdIndex + 1) % idList.length
                         document.querySelectorAll('.user-profile-id').forEach(el => el.textContent = idList[currentIdIndex].id)
@@ -3283,6 +3300,14 @@
                         <div class="grid gap-0-5">
                             <b>My MATIC (Polygon) address</b>
                             <sm-copy class="user-matic-id" value=${floGlobals.myMaticID}></sm-copy>
+                        </div>
+                        <div class="grid gap-0-5">
+                            <b>My ARB (Arbitrum) address</b>
+                            <sm-copy class="user-arb-id" value=${floGlobals.myArbID}></sm-copy>
+                        </div>
+                        <div class="grid gap-0-5">
+                            <b>My OP (Optimism) address</b>
+                            <sm-copy class="user-op-id" value=${floGlobals.myOpID}></sm-copy>
                         </div>
                         <div class="grid gap-0-5">
                             <b>My HBAR (Hedera) address</b>

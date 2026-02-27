@@ -9,6 +9,8 @@
  * - AVAX (Avalanche C-Chain) - same as ETH (EVM-compatible)
  * - BSC (Binance Smart Chain) - same as ETH (EVM-compatible)
  * - MATIC (Polygon) - same as ETH (EVM-compatible)
+ * - ARB (Arbitrum) - same as ETH (EVM-compatible)
+ * - OP (Optimism) - same as ETH (EVM-compatible)
  * - HBAR (Hedera) - same as ETH (EVM-compatible)
  * - XRP (Ripple) - via xrpl library
  * - SUI - via nacl + BLAKE2b
@@ -423,6 +425,8 @@ async function deriveAllBlockchainAddresses(wif) {
     bsc: null,
     matic: null,
     hbar: null,
+    arb: null,
+    op: null,
     xrp: null,
     sui: null,
     ton: null,
@@ -438,13 +442,15 @@ async function deriveAllBlockchainAddresses(wif) {
   };
 
   try {
-    // BSC, MATIC, and HBAR use same address as ETH (requires public key, not WIF)
+    // BSC, MATIC, HBAR, ARB, and OP use same address as ETH (requires public key, not WIF)
     // These will be set from floGlobals.myEthID in the main code
     addresses.bsc = null; // Set in main code as same as ETH
     addresses.matic = null; // Set in main code as same as ETH
     addresses.hbar = null; // Set in main code as same as ETH
+    addresses.arb = null; // Set in main code as same as ETH
+    addresses.op = null; // Set in main code as same as ETH
   } catch (e) {
-    console.warn("BSC/MATIC/HBAR derivation failed:", e);
+    console.warn("BSC/MATIC/HBAR/ARB/OP derivation failed:", e);
   }
   try {
     addresses.xrp = convertWIFtoXrpAddress(wif);

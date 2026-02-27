@@ -86,7 +86,7 @@
         if ((address.length === 33 || address.length === 34) && /^[1-9A-HJ-NP-Za-km-z]+$/.test(address)) {
             return floCrypto.validateAddr(address) || true;
         }
-        // Ethereum/EVM addresses (0x prefix, 40 hex chars) - ETH, AVAX, BSC, MATIC
+        // Ethereum/EVM addresses (0x prefix, 40 hex chars) - ETH, AVAX, BSC, MATIC, ARB, OP
         if (/^0x[a-fA-F0-9]{40}$/.test(address)) return true;
         // SUI addresses (0x prefix, 64 hex chars)
         if (/^0x[a-fA-F0-9]{64}$/.test(address)) return true;
@@ -152,6 +152,8 @@
                         case 'AVAX':
                         case 'BSC':
                         case 'MATIC':
+                        case 'ARB':
+                        case 'OP':
                         case 'HBAR':
                             proxyID = floEthereum.ethAddressFromCompressedPublicKey(user.public); break;
                         case 'BTC': proxyID = floGlobals.myBtcID; break;
@@ -632,6 +634,8 @@
                     case 'AVAX':
                     case 'BSC':
                     case 'MATIC':
+                    case 'ARB':
+                    case 'OP':
                     case 'HBAR':
                         addIfValid(floEthereum.ethAddressFromCompressedPublicKey(user.public));
                         break;
@@ -655,7 +659,8 @@
                 const allDerived = [
                     floEthereum.ethAddressFromCompressedPublicKey(user.public),
                     floGlobals.myBtcID, floGlobals.myAvaxID, floGlobals.myBscID,
-                    floGlobals.myMaticID, floGlobals.myHbarID, floGlobals.myXrpID,
+                    floGlobals.myMaticID, floGlobals.myArbID, floGlobals.myOpID,
+                    floGlobals.myHbarID, floGlobals.myXrpID,
                     floGlobals.mySuiID, floGlobals.myTonID, floGlobals.myTronID,
                     floGlobals.myDogeID, floGlobals.myLtcID, floGlobals.myBchID,
                     floGlobals.myDotID, floGlobals.myAlgoID, floGlobals.myXlmID,
