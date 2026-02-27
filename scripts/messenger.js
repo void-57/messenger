@@ -606,7 +606,7 @@
         return new Promise(async (resolve, reject) => {
             // All blockchain address IDs to listen on
             let activeChain = localStorage.getItem(`${floGlobals.application}#activeChain`);
-            const blockchainAddressIDs = [user.id]; // Always listen to FLO address (primary)
+            const blockchainAddressIDs = [floGlobals.myFloID || user.id]; // Always listen to FLO address (primary)
 
             if (!activeChain) {
                 try {

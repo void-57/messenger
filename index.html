@@ -275,6 +275,29 @@
             <button class="button cancel-button" onclick="resolveBlockchainSelection(null)">Cancel</button>
         </div>
     </sm-popup>
+    <sm-popup id="btc_bch_select_popup" dismissable="false">
+        <h4 id="btc_bch_select_title">Select Blockchain</h4>
+        <p>Your private key format is used by Bitcoin and Bitcoin Cash. Please select the correct blockchain for this
+            key:</p>
+        <div class="grid gap-0-5 margin-top-1">
+            <button class="button w-100" onclick="resolveBlockchainSelection('BTC')">Bitcoin (BTC)</button>
+            <button class="button w-100" onclick="resolveBlockchainSelection('BCH')">Bitcoin Cash (BCH)</button>
+        </div>
+        <div class="flex align-center gap-0-5 margin-top-1 margin-left-auto">
+            <button class="button cancel-button" onclick="resolveBlockchainSelection(null)">Cancel</button>
+        </div>
+    </sm-popup>
+    <sm-popup id="ton_algo_select_popup" dismissable="false">
+        <h4 id="ton_algo_select_title">Select Blockchain</h4>
+        <p>Your private key format is used by TON and Algorand. Please select the correct blockchain for this key:</p>
+        <div class="grid gap-0-5 margin-top-1">
+            <button class="button w-100" onclick="resolveBlockchainSelection('TON')">TON</button>
+            <button class="button w-100" onclick="resolveBlockchainSelection('ALGO')">Algorand (ALGO)</button>
+        </div>
+        <div class="flex align-center gap-0-5 margin-top-1 margin-left-auto">
+            <button class="button cancel-button" onclick="resolveBlockchainSelection(null)">Cancel</button>
+        </div>
+    </sm-popup>
     <div id="adblocker_warning"></div>
     <div id="secondary_pages" class="page hidden">
         <header class="flex align-center gap-1 space-between">
@@ -2784,8 +2807,13 @@
                             key.setCompressed(true);
                             privateKey = key.getBitcoinWalletImportFormat();
                         } else if (/^[0-9a-fA-F]{128}$/.test(privateKey)) {
-                            activeChain = 'TON';
-                            // Convert 128-char TON ed25519 key to workable FLO WIF using the first 32-bytes (seed)
+                            activeChain = await new Promise(resolve => {
+                                _blockchainResolve = resolve;
+                                openPopup('ton_algo_select_popup');
+                            });
+                            if (!activeChain) return;
+
+                            // Convert 128-char ed25519 key to workable FLO WIF using the first 32-bytes (seed)
                             let key = new Bitcoin.ECKey(privateKey.substring(0, 64));
                             key.setCompressed(true);
                             privateKey = key.getBitcoinWalletImportFormat();
@@ -2810,7 +2838,13 @@
                             else if (privateKey.startsWith('s')) activeChain = 'XRP';
                             else if (privateKey.startsWith('Q')) activeChain = 'DOGE';
                             else if (privateKey.startsWith('T') && privateKey.length === 51) activeChain = 'LTC';
-                            else if (privateKey.startsWith('K') || privateKey.startsWith('L')) activeChain = 'BTC';
+                            else if (privateKey.startsWith('K') || privateKey.startsWith('L') || privateKey.startsWith('5')) {
+                                activeChain = await new Promise(resolve => {
+                                    _blockchainResolve = resolve;
+                                    openPopup('btc_bch_select_popup');
+                                });
+                                if (!activeChain) return;
+                            }
                             else if (privateKey.startsWith('S') && privateKey.length === 56) activeChain = 'XLM';
                             else if (privateKey.startsWith('R')) activeChain = 'FLO';
                             else activeChain = 'UNKNOWN';

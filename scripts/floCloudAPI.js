@@ -406,8 +406,8 @@
             hash[0] != checksum[0] || hash[1] != checksum[1] || hash[2] != checksum[2] || hash[3] != checksum[3] ?
                 bytes = undefined : bytes.shift();
         }
-        // BTC/LTC Bech32 encoding (42 or 62 chars, not starting with 0x)
-        else if (!address.startsWith("0x") && (address.length == 42 || address.length == 62) && !address.startsWith("addr1")) {
+        // BTC/LTC Bech32 encoding (bc1 or ltc1 prefix)
+        else if (/^(bc1|ltc1)[a-zA-HJ-NP-Z0-9]{25,62}$/.test(address)) {
             if (typeof coinjs !== 'function')
                 throw "library missing (lib_btc.js)";
             let decode = coinjs.bech32_decode(address);
